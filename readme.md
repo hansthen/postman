@@ -99,6 +99,14 @@ See [Andrew Brooks library](https://github.com/brooksandrew/postman_problems).
 Unfortunatly, the algorithm used only works when the graphs of required edges is
 connected. This limitation does not hold for us. In "Arc Routing Problems",
 we see a few algorithms that may work. I started implememnting those in 
-`solver.py`, but the work is far from finished.
+`solver.py`, but the work is far from finished. The program should work as follows:
+
+```
+python solver.py <postcode+housenumber>...
+```
+
+
+
+
 
 

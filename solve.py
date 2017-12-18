@@ -68,7 +68,6 @@ class Postman(object):
                     and tags['addr:postcode'] == postcode \
                     and 'addr:housenumber' in tags \
                     and tags['addr:housenumber'] == number:
-                #print coords
                 return self.find_closest_edge(coords)
         return None
 
@@ -105,6 +104,10 @@ class Postman(object):
         return g_aug, g_req
 
     def solve_brooks(self, required):
+        """A reimplementation of andrew brooks rpp solver
+
+        using a different input format"""
+
         g_full = self.create_graph(required)
         g_req = graph.create_required_graph(g_full)
         graph.assert_graph_is_connected(g_req)
@@ -123,27 +126,29 @@ class Postman(object):
         return circuit
 
     def solve_c42(self, required):
-        """Solve using fredrickson's heuristic"""
+        """Solve using Fredrickson's heuristic"""
         g_full = self.create_graph(required)
         g_req = graph.create_required_graph(g_full)
         node_pairs = list(itertools.combinations(g_req, 2))
+        # g_aug is the G' from Frederickson's heuristic
         g_aug = g_full.copy()
         # Add edges
         for i, pair in enumerate(node_pairs):
             try:
                 d = nx.dijkstra_path_length(g_full, pair[0], pair[1], weight='distance')
-                # Only setting distance now, not id.
-                # Do we need these attributes later on?
                 g_aug.add_edge(pair[0], pair[1], distance=d, id=-i, required=False)
             except:
                 pass
         for edge in g_aug.edges():
             # remove duplicate edges
+            # actually, I think I can remove any longer edge from the parallel edges
+            # (As long as they are not required).
             data = g_aug[edge[0]][edge[1]]
             if len(data) > 1:
                 deletions = set()
                 for pair in itertools.combinations(data.keys(), 2):
                     key1, key2 = pair
+                    # FIXME: what if edge2 is required and edge1 is not???
                     if data[key1]['distance'] - data[key2]['distance'] < 1e-09 \
                             and not data[key2]['required']:
                         #g_aug.remove_edge(edge[0], edge[1], key2)
@@ -155,33 +160,21 @@ class Postman(object):
             deletions = set()
             for node in g_aug[edge[0]]:
                 if edge[1] in g_aug[node]:
-                    # Now loop through all parallel edges and remove duplicates
-                    print g_aug[edge[0]][node]
-                    print g_aug[node][edge[1]]
+                    # Remove duplicates
+                    # FIXME: need to check all parallel edges
                     if g_aug[edge[0]][node][0]['distance'] - g_aug[node][edge[1]][0]['distance'] < 1e-09 \
                             and not g_aug[edge[0]][edge[1]][0]['required']:
                         #g_aug.remove_edge(edge[0], edge[1], 0)
-                        print "delete the edge"
                         deletions.add(edge)
                         break
             for edge in deletions:
                 g_aug.remove_edge(edge[0], edge[1])
 
-            required = g_aug.get_edge_data(edge[0], edge[1], 'required')
-            if not required:
-                distance = g_aug.get_edge_data(edge[0], edge[1], 'distance')
-        # Remove edges (can we really do this? We are using floats here).
-
-        raise Exception
-        node_pairs_shortest_paths = graph.get_shortest_paths_distances(g_full,
-                                                                       node_pairs,
-                                                                       'distance')
-
-        print node_pairs_shortest_paths
-        T = nx.minimum_spanning_tree(g_bar, 'distance')
-
-
+        T = nx.minimum_spanning_tree(g_aug, 'distance')
+        # Do the minimum cost mapping (As in Brooks' version), but on R = g_full U T.
         start_node = next(iter(required))[0]
+        circuit = list(graph.create_eulerian_circuit(g_aug, g_full, start_node))
+        return circuit
 
 
 if __name__ == '__main__':
@@ -201,4 +194,4 @@ if __name__ == '__main__':
         else:
             print "invalid postcode ()".format(arg)
     print required
-    print postman.solve_c42(required)
+    print postman.solve_brooks(required)
