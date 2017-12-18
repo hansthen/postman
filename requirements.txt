@@ -1,0 +1,13 @@
+decorator==4.1.2
+graphviz==0.8.1
+imageio==2.2.0
+networkx==2.0
+numpy==1.13.3
+olefile==0.44
+pandas==0.21.0
+Pillow==4.3.0
+postman-problems==0.2
+python-dateutil==2.6.1
+pytz==2017.3
+six==1.11.0
+tqdm==4.19.4
