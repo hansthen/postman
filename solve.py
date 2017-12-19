@@ -5,16 +5,35 @@ import networkx as nx
 import sys
 from postman_problems import graph
 import itertools
+import matplotlib.pyplot as plt
 
 def dist_line(point, start, end):
     """Calculate the distance between `point`
-       and the line defined by `start` and `end`"""
+       and the line segment defined by `start` and `end`
+
+       Shamelessly stolen from [here]("https://stackoverflow.com/questions/849211/shortest-distance-between-a-point-and-a-line-segment")
+    """
     x0, y0 = point
     x1, y1 = start
     x2, y2 = end
 
-    return abs((y2 - y1) * x0 - (x2 - x1) * y0 + x2 * y1 - y2 * x1) / \
-           sqrt((y2 - y1) ** 2 + (x2 - x1) ** 2)
+    px = x2-x1
+    py = y2-y1
+
+    u =  ((x0 - x1) * px + (y0 - y1) * py) / (px**2 + py**2)
+
+    if u > 1:
+        u = 1
+    elif u < 0:
+        u = 0
+
+    x = x1 + u * px
+    y = y1 + u * py
+
+    dx = x - x0
+    dy = y - y0
+
+    return sqrt(dx**2 + dy**2)
 
 def dist(start, end):
     """Calculate the distance between `start` and `end`"""
@@ -27,6 +46,7 @@ class Postman(object):
     def __init__(self, filename):
         self.nodes = {}
         self.coords = {}
+        self.positions = {}
         self.ways = {}
         self.edges = []
         parser = OSMParser(concurrency=1,
@@ -37,6 +57,8 @@ class Postman(object):
 
         for osmid in self.ways:
             tags, refs = self.ways[osmid]
+            if not 'highway' in tags:
+                continue
             # unpack the ways in to edges that will be used for the graphs later
             # we store the osm id of the way in the edge, but prolly not needed
             for i in xrange(len(refs) - 1):
@@ -59,25 +81,37 @@ class Postman(object):
                 min_edge = e
         return min_edge
 
-    def find_edge_by_address(self, postcode, number):
-        for coords, tags in self.nodes.values():
-            if tags:
-                pass
+    def find_by_address(self, postcode, number):
+        for item, (coords, tags) in self.nodes.items():
             if tags \
                     and 'addr:postcode' in tags \
                     and tags['addr:postcode'] == postcode \
                     and 'addr:housenumber' in tags \
                     and tags['addr:housenumber'] == number:
-                return self.find_closest_edge(coords)
+                return item, coords
+        return None, None
+
+    def find_edge_by_address(self, postcode, number):
+        osmid, coords = self.find_by_address( postcode, number)
+        if coords:
+            return self.find_closest_edge(coords)
         return None
 
     def nodes_cb(self, nodes):
         for osmid, tags, coords in nodes:
             self.nodes[osmid] = (coords, tags)
+            if osmid in self.positions and self.positions[osmid] != coords:
+                print "duplicate node", osmid, self.positions[osmid], coords
+            else:
+                self.positions[osmid] = coords
 
     def coords_cb(self, coords):
         for osmid, lon, lat in coords:
             self.coords[osmid] = ((lon, lat), {})
+            if osmid in self.positions and self.positions[osmid] != (lon, lat):
+                print "duplicate coords", osmid, self.positions[osmid], (lon, lat)
+            else:
+                self.positions[osmid] = (lon, lat)
 
     def ways_cb(self, ways):
         for osmid, tags, refs in ways:
@@ -92,6 +126,7 @@ class Postman(object):
         return graph
 
     def augment_graph(self, g_full):
+        """Not used"""
         g_req = graph.create_required_graph(g_full)
         odd_nodes = graph.get_odd_nodes(g_req)
         odd_node_pairs = list(itertools.combinations(odd_nodes, 2))
@@ -182,11 +217,14 @@ if __name__ == '__main__':
     pattern = re.compile(r'(\d{4}\w{2})(.*)')
     postman = Postman('map.osm')
     required = set()
+    addresses = []
     for arg in sys.argv[1:]:
         m = pattern.match(arg)
         if m:
             postcode, number = m.groups()
             edge = postman.find_edge_by_address(postcode, number)
+            osmid, coords = postman.find_by_address(postcode, number)
+            addresses.append(osmid)
             if edge:
                  required.add(tuple(sorted((edge[1], edge[2]))))
             else:
@@ -194,4 +232,15 @@ if __name__ == '__main__':
         else:
             print "invalid postcode ()".format(arg)
     print required
-    print postman.solve_brooks(required)
+    G = postman.create_graph(required)
+    for a in addresses:
+        G.add_node(a, required=True)
+
+    plt.figure(figsize=(8, 6))
+    edge_colors = ['red' if e[2]['required'] else 'grey' for e in G.edges(data=True)]
+    node_colors = ['orange' if 'required' in G.node[n] else 'grey' for n in G.nodes()]
+
+    nx.draw(G, pos=postman.positions, edge_color=edge_colors, node_size=1, node_color=node_colors)
+    plt.show()
+
+    #print postman.solve_brooks(required)
