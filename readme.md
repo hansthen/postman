@@ -26,7 +26,12 @@ Notes for testing
 
 To create a list of valid addresses in a map use
 ```
-python addresses.py <osm.map-file>
+python addresses.py <osm.map-file> > test-set 
+```
+
+To test against 20 random addresses do and do a visual inspection of the route.
+```
+sort -R test-set | head -n 20 | awk -F\  '{print $1} | xargs python solve.py'
 ```
 
 Known bugs and limitations
