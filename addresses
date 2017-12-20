@@ -1,5 +1,3 @@
-31213
-3117VD 45
 {'addr:housenumber': '107', 'addr:city': 'Schiedam', 'addr:postcode': '3111JJ', 'source:date': '2014-02-11', 'source': 'BAG', 'addr:street': 'Lange Achterweg'}
 {'addr:housenumber': '6B', 'addr:city': 'Schiedam', 'addr:postcode': '3117MC', 'source:date': '2014-02-11', 'source': 'BAG', 'addr:street': 'Fabriplein'}
 {'addr:housenumber': '6A', 'addr:city': 'Schiedam', 'addr:postcode': '3117SJ', 'source:date': '2014-02-11', 'source': 'BAG', 'addr:street': 'Jacob van Lennepstraat'}

@@ -80,7 +80,7 @@ class Postman(object):
         for osmid, tags, coords in nodes:
             self.nodes[osmid] = (coords, tags)
             if osmid in self.positions and self.positions[osmid] != coords:
-                print "duplicate node", osmid, self.positions[osmid], coords
+                logger.warning("duplicate node %s, %s, %s", osmid, self.positions[osmid], coords)
             else:
                 self.positions[osmid] = coords
 
@@ -88,7 +88,7 @@ class Postman(object):
         for osmid, lon, lat in coords:
             self.coords[osmid] = ((lon, lat), {})
             if osmid in self.positions and self.positions[osmid] != (lon, lat):
-                print "duplicate coords", osmid, self.positions[osmid], (lon, lat)
+                logger.warning("duplicate coords %s, %s, %s", osmid, self.positions[osmid], (lon, lat))
             else:
                 self.positions[osmid] = (lon, lat)
 
@@ -232,8 +232,14 @@ class Postman(object):
                     d[0]['included'] = True
             except:
                 logger.warning("Unable to find edge from {} to {}. Solution will be disconnected".format(from_node, to_node))
+                # This is a bug, but we can hack it.
                 G.node[from_node]['color'] = 'blue'
                 G.node[to_node]['color'] = 'blue'
+                path = nx.shortest_path(G, from_node, to_node, weight='distance')
+                for i in range(len(path)-1):
+                    d = G[path[i]][path[i+1]]
+                    d[0]['included'] = True
+
 
         return G
 
@@ -259,9 +265,9 @@ if __name__ == '__main__':
             if edge:
                  required.add(tuple(sorted((edge[1], edge[2]))))
             else:
-                logger.debug("arg {} not found".format(arg))
+                logger.warning("arg {} not found".format(arg))
         else:
-            logger.debug("invalid postcode ()".format(arg))
+            logger.warning("invalid postcode ()".format(arg))
     G = postman.create_graph(required)
     circuit = postman.solve_fredrickson(required)
     postman.mark_circuit_in_graph(circuit, G)
