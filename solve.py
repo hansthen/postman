@@ -7,6 +7,7 @@ from postman_problems import graph
 import itertools
 import matplotlib.pyplot as plt
 import logging
+import os
 
 logging.basicConfig(level=os.getenv('C42_LOGLEVEL') or 'INFO')
 logger = logging.getLogger(__name__)
@@ -153,60 +154,6 @@ class Postman(object):
 
         return circuit
 
-    def get_shortest_paths_distances(self, graph, pairs, edge_weight_name='distance'):
-        distances = {}
-        for i, pair in enumerate(pairs):
-            if i % 100 == 0:
-                print i
-            distances[pair] = nx.dijkstra_path_length(graph, pair[0], pair[1], weight=edge_weight_name)
-        return distances
-
-    def create_complete_graph(self, pair_weights, flip_weights=True):
-        """
-        Create a perfectly connected graph from a list of node pairs and the distances between them.
-        Args:
-            pair_weights (dict): mapping between node pairs and distance calculated in `get_shortest_paths_distances`.
-            flip_weights (Boolean): True negates the distance in `pair_weights`.  We negate whenever we want to find the
-             minimum weight matching on a graph because networkx has only `max_weight_matching`, no `min_weight_matching`.
-        Returns:
-            complete (fully connected graph) networkx graph using the node pairs and distances provided in `pair_weights`
-        """
-        g = nx.Graph()
-        i = 1
-        for k, v in pair_weights.items():
-            if i % 100 == 0:
-                print i
-            i += 1
-            wt_i = -v if flip_weights else v
-            g.add_edge(k[0], k[1], **{'distance': v, 'weight': wt_i})
-        return g
-
-    def add_augmenting_path_to_graph(self, graph, min_weight_pairs, edge_weight_name='weight'):
-        """
-        Add the min weight matching edges to the original graph
-        Note the resulting graph could (and likely will) have edges that didn't exist on the original graph.  To get the
-        true circuit, we must breakdown these augmented edges into the shortest path through the edges that do exist.  This
-        is done with `create_eulerian_circuit`.
-        Args:
-            graph (networkx graph):
-            min_weight_pairs (list[2tuples): output of `dedupe_matching` specifying the odd degree nodes to link together
-            edge_weight_name (str): edge attribute used for distance calculation
-        Returns:
-            networkx graph: `graph` augmented with edges between the odd nodes specified in `min_weight_pairs`
-        """
-        graph_aug = graph.copy()  # so we don't mess with the original graph
-        i = 0
-        for pair in min_weight_pairs:
-            i += 1
-            if i % 100 == 0:
-                print i
-            graph_aug.add_edge(pair[0],
-                               pair[1],
-                               **{'distance': nx.dijkstra_path_length(graph, pair[0], pair[1], weight=edge_weight_name),
-                                  'augmented': True}
-                               )
-        return graph_aug
-
     def solve_fredrickson(self, required):
         """Solve using Fredrickson's heuristic"""
         g_full = self.create_graph(required)
@@ -222,10 +169,8 @@ class Postman(object):
                 d = nx.dijkstra_path_length(g_full, pair[0], pair[1], weight='distance')
                 g_aug.add_edge(pair[0], pair[1], distance=d, id=-i, required=False)
             except:
-                print "Dijkstra failing"
-                pass
-        print "#edges aug", len(g_aug.edges())
-        """
+                logger.exception("Dijkstra failed")
+
         for edge in g_aug.edges():
             # remove duplicate edges
             # actually, I think I can remove any longer edge from the parallel edges
@@ -257,49 +202,40 @@ class Postman(object):
             for edge in deletions:
                 g_aug.remove_edge(edge[0], edge[1])
 
-        print "#edges aug", len(g_aug.edges())
-        """
         T = nx.minimum_spanning_tree(g_aug, 'distance')
-        self.show(T)
+        if os.getenv('C42_LOGLEVEL') == 'DEBUG':
+            self.show(T)
         # perhaps we need to add the required edges (again) to T, so far they were all included anyway
         # Let's test it first and then see further
 
-        print "Step 1"
         odd_nodes = graph.get_odd_nodes(T)
         odd_node_pairs = list(itertools.combinations(odd_nodes, 2))
-        print "length odd_node_pairs", len(odd_node_pairs)
-        odd_node_pairs_shortest_paths = self.get_shortest_paths_distances(g_full,
+        odd_node_pairs_shortest_paths = graph.get_shortest_paths_distances(g_full,
                                                                            odd_node_pairs,
                                                                            'distance')
-        print "Step 2"
-        g_complete = self.create_complete_graph(odd_node_pairs_shortest_paths, flip_weights=True)
-        self.show(g_complete)
+        g_complete = graph.create_complete_graph(odd_node_pairs_shortest_paths, flip_weights=True)
+        if os.getenv('C42_LOGLEVEL') == 'DEBUG':
+            self.show(g_complete)
         M = graph.dedupe_matching(nx.algorithms.max_weight_matching(g_complete, True))
-        g_aug = self.add_augmenting_path_to_graph(T, M)
+        g_aug = graph.add_augmenting_path_to_graph(T, M)
 
-        print "Step 3"
         start_node = next(iter(required))[0]
         circuit = list(graph.create_eulerian_circuit(g_aug, g_full, start_node))
+        return circuit
 
+    def mark_circuit_in_graph(self, circuit, G):
         for edge in circuit:
             from_node, to_node, _, data = edge
             try:
-                if from_node not in g_full:
-                    print "error invalid from", from_node
-                if to_node not in g_full[from_node]:
-                    print "error invalid to", to_node
                 if not data['required']:
-                    d = g_full[from_node][to_node]
-                    if len(d) > 1:
-                        print "What now?"
-                    else:
-                        d[0]['included'] = True
+                    d = G[from_node][to_node]
+                    d[0]['included'] = True
             except:
-                print from_node, to_node
-                g_full.node[from_node]['color'] = 'yellow'
-                g_full.node[to_node]['color'] = 'blue'
+                logger.warning("Unable to find edge from {} to {}. Solution will be disconnected".format(from_node, to_node))
+                G.node[from_node]['color'] = 'blue'
+                G.node[to_node]['color'] = 'blue'
 
-        return g_full
+        return G
 
     def show(self, G):
         plt.figure(figsize=(8, 6))
@@ -307,7 +243,6 @@ class Postman(object):
         node_colors = [n[1]['color'] if 'color' in n[1] else 'black' for n in G.nodes(data=True)]
         nx.draw(G, pos=self.positions, edge_color=edge_colors, node_size=3, node_color=node_colors)
         plt.show()
-
 
 
 if __name__ == '__main__':
@@ -324,18 +259,11 @@ if __name__ == '__main__':
             if edge:
                  required.add(tuple(sorted((edge[1], edge[2]))))
             else:
-                print "arg {} not found".format(arg)
+                logger.debug("arg {} not found".format(arg))
         else:
-            print "invalid postcode ()".format(arg)
-    print required
+            logger.debug("invalid postcode ()".format(arg))
     G = postman.create_graph(required)
-    G = postman.solve_fredrickson(required)
+    circuit = postman.solve_fredrickson(required)
+    postman.mark_circuit_in_graph(circuit, G)
     postman.show(G)
-
-    """
-    plt.figure(figsize=(8, 6))
-    edge_colors = ['red' if e[2]['required'] else 'lightgrey' for e in T.edges(data=True)]
-    nx.draw(T, pos=postman.positions, edge_color=edge_colors, node_size=0.1, node_color='grey')
-    plt.show()
-    """
 
